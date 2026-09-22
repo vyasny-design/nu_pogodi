@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>🐺 Ну, Погоди! — Ловля яиц</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #1a1a2e; color: #fff;
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    user-select: none; overflow: hidden; padding: 8px;
+  }
+
+  #hud {
+    display: flex; gap: 16px; align-items: center;
+    padding: 10px 16px; font-size: 16px; font-weight: 700;
+    background: rgba(255,255,255,0.08); border-radius: 12px;
+    margin-bottom: 10px; min-width: 320px; justify-content: space-between;
+  }
+  #hud .lives { letter-spacing: 2px; }
+  #hud .lives .dead { opacity: 0.25; filter: grayscale(1); }
+
+  #field {
+    position: relative;
+    width: min(92vw, 420px);
+    height: min(92vw, 420px);
+    background: radial-gradient(circle at center, #3a6a4a 0%, #1a3a26 70%, #0f2418 100%);
+    border: 6px solid #8B4513;
+    border-radius: 50%;
+    box-shadow: 0 0 40px rgba(0,0,0,0.6), inset 0 0 60px rgba(0,0,0,0.5);
+    overflow: hidden;
+  }
+
+  /* Волк в центре */
+  #wolf {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 60px; z-index: 5;
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.5));
+    transition: transform 0.1s;
+  }
+  #wolf.hit { animation: shake 0.35s; }
+  @keyframes shake {
+    0%,100% { transform: translate(-50%,-50%) rotate(0); }
+    20% { transform: translate(-50%,-50%) rotate(-12deg) scale(1.1); }
+    40% { transform: translate(-50%,-50%) rotate(12deg) scale(1.1); }
+    60% { transform: translate(-50%,-50%) rotate(-8deg); }
+    80% { transform: translate(-50%,-50%) rotate(8deg); }
+  }
+
+  /* Облачко с матом */
+  .swear {
+    position: absolute; z-index: 20;
+    background: #fff; color: #d00;
+    font-weight: 900; font-size: 18px;
+    padding: 6px 12px; border-radius: 12px;
+    border: 2px solid #d00;
+    white-space: nowrap;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    animation: swearPop 1s ease-out forwards;
+    text-shadow: 1px 1px 0 #fff;
+  }
+  .swear::after {
+    content: ''; position: absolute;
+    bottom: -8px; left: 20px;
+    width: 0; height: 0;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 10px solid #fff;
+  }
+  @keyframes swearPop {
+    0% { opacity: 0; transform: translate(-50%,-50%) scale(0.3); }
+    20% { opacity: 1; transform: translate(-50%,-60%) scale(1.15); }
+    35% { transform: translate(-50%,-60%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%,-90%) scale(1); }
+  }
+
+  /* Корзина (между волком и яйцами) */
+  #basket {
+    position: absolute; width: 70px; height: 50px;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 46px; line-height: 50px; text-align: center;
+    z-index: 6;
+    transition: left 0.1s ease-out, top 0.1s ease-out;
+    filter: drop-shadow(0 3px 5px rgba(0,0,0,0.6));
+    pointer-events: none;
+  }
+
+  /* Яйца */
+  .egg {
+    position: absolute; font-size: 30px;
+    z-index: 4; will-change: transform;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5));
+  }
+
+  /* Всплывашки */
+  .pop {
+    position: absolute; font-size: 16px; font-weight: 700;
+    color: #FFD700; text-shadow: 1px 1px 2px #000;
+    pointer-events: none; z-index: 10;
+    animation: popUp 0.7s ease-out forwards;
+    transform: translate(-50%, -50%);
+  }
+  @keyframes popUp {
+    0% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%,-100%) scale(1.4); }
+  }
+
+  /* Кнопки управления */
+  #controls {
+    display: grid;
+    grid-template-columns: repeat(3, 56px);
+    grid-template-rows: repeat(3, 56px);
+    gap: 6px;
+    margin-top: 12px;
+  }
+  .ctrl {
+    background: linear-gradient(180deg, #4a4a6a, #2a2a4a);
+    border: 2px solid #6a6a8a; border-radius: 12px;
+    font-size: 24px; cursor: pointer; color: white;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 3px 0 #1a1a2a; transition: all 0.08s;
+    user-select: none;
+  }
+  .ctrl:active { transform: translateY(3px); box-shadow: 0 0 0 #1a1a2a; }
+  .ctrl.empty { visibility: hidden; }
+
+  /* Оверлеи */
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.9);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 100; text-align: center; padding: 20px;
+  }
+  .overlay h1 { font-size: 30px; margin-bottom: 12px; }
+  .overlay p { font-size: 15px; opacity: 0.85; margin-bottom: 8px; max-width: 340px; }
+  .overlay button {
+    margin-top: 20px; padding: 14px 36px;
+    font-size: 18px; font-weight: 700;
+    background: linear-gradient(180deg, #FF6B6B, #C92A2A);
+    color: white; border: none; border-radius: 12px;
+    cursor: pointer; box-shadow: 0 4px 0 #8B0000;
+    transition: all 0.1s;
+  }
+  .overlay button:active { transform: translateY(3px); box-shadow: 0 1px 0 #8B0000; }
+  .hidden { display: none !important; }
+
+  #idleInfo {
+    margin-top: 10px; font-size: 12px; opacity: 0.7;
+    display: flex; gap: 14px;
+  }
+  #idleInfo span { display: flex; align-items: center; gap: 4px; }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div>🥚 <span id="caught">0</span>/100</div>
+  <div class="lives" id="lives">❤️❤️❤️</div>
+  <div>⚡ <span id="speed">1.0</span>x</div>
+</div>
+
+<div id="field">
+  <div id="wolf">🐺</div>
+  <div id="basket">🧺</div>
+</div>
+
+<div id="controls">
+  <div class="ctrl empty"></div>
+  <div class="ctrl" data-dir="up">⬆️</div>
+  <div class="ctrl empty"></div>
+  <div class="ctrl" data-dir="left">⬅️</div>
+  <div class="ctrl empty"></div>
+  <div class="ctrl" data-dir="right">➡️</div>
+  <div class="ctrl empty"></div>
+  <div class="ctrl" data-dir="down">⬇️</div>
+  <div class="ctrl empty"></div>
+</div>
+
+<div id="idleInfo">
+  <span>🐔 <span id="chickens">0</span></span>
+  <span>🍗 <span id="food">0</span></span>
+  <span>🏭 <span id="factory">0</span></span>
+</div>
+
+<!-- Оверлеи -->
+<div class="overlay" id="startScreen">
+  <h1>🐺 Ну, Погоди!</h1>
+  <p>Яйца катятся <b>снаружи к волку</b> в центре. Двигай корзину 🧺 на их пути.</p>
+  <p>Пропустил яйцо — волк ругается 💢 и теряется жизнь.</p>
+  <p>❤️❤️❤️ = 3 жизни. Цель: поймать <b>100 яиц</b>.</p>
+  <button id="startBtn">НАЧАТЬ</button>
+</div>
+
+<div class="overlay hidden" id="winScreen">
+  <h1>🏆 Победа!</h1>
+  <p>Ты поймал 100 яиц! Волк доволен.</p>
+  <p id="winStats"></p>
+  <button id="restartBtn">ЕЩЁ РАЗ</button>
+</div>
+
+<div class="overlay hidden" id="loseScreen">
+  <h1>💥 Проигрыш</h1>
+  <p>Волк обматерил тебя трижды...</p>
+  <p id="loseStats"></p>
+  <button id="retryBtn">ПОПРОБОВАТЬ СНОВА</button>
+</div>
+
+<script>
+// ============ КОНСТАНТЫ ============
+const FIELD_SIZE = 420;
+const CENTER = FIELD_SIZE / 2;
+const BASKET_OFFSET = 85;        // корзина ближе к центру, чем к краю
+const CATCH_RADIUS = 46;
+const WOLF_RADIUS = 42;          // радиус "дошло до волка"
+const EGG_SPAWN_INTERVAL_BASE = 1100;
+const EGG_SPEED_BASE = 1.5;
+const TARGET = 100;
+const LIVES = 3;
+
+const DIRECTIONS = [
+  { name: 'up',    dx: 0,  dy: -1 },
+  { name: 'right', dx: 1,  dy: 0  },
+  { name: 'down',  dx: 0,  dy: 1  },
+  { name: 'left',  dx: -1, dy: 0  },
+];
+
+// ============ МАТЮКИ ВОЛКА ============
+const SWEARS = [
+  'ЁКЛМН!', 'ЁПРСТ!', 'ТВОЮ МАТЬ!', 'Ё-МОЁ!',
+  'ТЬФУ ТЫ!', 'ЧЁ ЗА?!', 'БЛИН!', 'ЁК-МАКАРЁК!',
+  'ЁШКИН КОТ!', 'ЯДРЁНА ВОШЬ!', 'РАСТУДЫТЬ!',
+  'ПОПАЛ!', 'НУ ЁЛКИ-ПАЛКИ!', 'ЁБ ТВОЮ МАТЬ!',
+  'АХ ТЫ Ж!', 'ВОТ ТЕ РАЗ!', 'ТВОЮ ДИВИЗИЮ!',
+];
+
+// ============ СОСТОЯНИЕ ============
+const G = {
+  running: false,
+  caught: 0,
+  lives: LIVES,
+  speedMult: 1,
+  eggs: [],
+  spawnTimer: 0,
+  lastFrame: 0,
+  basketSide: 'up',
+  chickens: 0,
+  food: 0,
+  factory: 0,
+};
+
+// ============ DOM ============
+const field     = document.getElementById('field');
+const basketEl  = document.getElementById('basket');
+const wolfEl    = document.getElementById('wolf');
+const caughtEl  = document.getElementById('caught');
+const livesEl   = document.getElementById('lives');
+const speedEl   = document.getElementById('speed');
+const chickensEl= document.getElementById('chickens');
+const foodEl    = document.getElementById('food');
+const factoryEl = document.getElementById('factory');
+
+// ============ КОРЗИНА ============
+function setBasket(side) {
+  G.basketSide = side;
+  const px = CENTER + (side === 'right' ? BASKET_OFFSET : side === 'left' ? -BASKET_OFFSET : 0);
+  const py = CENTER + (side === 'down'  ? BASKET_OFFSET : side === 'up'   ? -BASKET_OFFSET : 0);
+  basketEl.style.left = (px / FIELD_SIZE * 100) + '%';
+  basketEl.style.top  = (py / FIELD_SIZE * 100) + '%';
+}
+setBasket('up');
+
+// ============ УПРАВЛЕНИЕ ============
+function move(dir) {
+  if (!G.running) return;
+  if (dir === G.basketSide) return;
+  setBasket(dir);
+}
+
+document.querySelectorAll('.ctrl').forEach(btn => {
+  btn.addEventListener('click', () => move(btn.dataset.dir));
+});
+
+document.addEventListener('keydown', e => {
+  const map = {
+    ArrowUp:'up', ArrowDown:'down', ArrowLeft:'left', ArrowRight:'right',
+    w:'up', s:'down', a:'left', d:'right',
+    'ц':'up', 'ы':'down', 'ф':'left', 'в':'right'
+  };
+  const dir = map[e.key];
+  if (dir) { e.preventDefault(); move(dir); }
+  if (e.code === 'Space' && !G.running) startGame();
+});
+
+// Свайпы
+let touchStart = null;
+field.addEventListener('touchstart', e => {
+  touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+}, { passive: true });
+field.addEventListener('touchend', e => {
+  if (!touchStart) return;
+  const dx = e.changedTouches[0].clientX - touchStart.x;
+  const dy = e.changedTouches[0].clientY - touchStart.y;
+  if (Math.abs(dx) < 30 && Math.abs(dy) < 30) return;
+  if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 'right' : 'left');
+  else move(dy > 0 ? 'down' : 'up');
+  touchStart = null;
+}, { passive: true });
+
+// ============ СПАВН ЯИЦ (СНАРУЖИ) ============
+function spawnEgg() {
+  // сторона, откуда падает яйцо (не та, где корзина — иначе нечестно)
+  let sideIdx;
+  do { sideIdx = Math.floor(Math.random() * 4); }
+  while (DIRECTIONS[sideIdx].name === G.basketSide);
+
+  const dir = DIRECTIONS[sideIdx];
+  // старт — на самом краю поля
+  const startX = CENTER + dir.dx * (CENTER - 15);
+  const startY = CENTER + dir.dy * (CENTER - 15);
+
+  const egg = document.createElement('div');
+  egg.className = 'egg';
+  egg.textContent = '🥚';
+  field.appendChild(egg);
+
+  G.eggs.push({
+    el: egg,
+    x: startX,
+    y: startY,
+    vx: -dir.dx,   // ИНВЕРСИЯ: летит ОТ края К центру
+    vy: -dir.dy,
+    alive: true,
+  });
+}
+
+// ============ ОБНОВЛЕНИЕ ============
+function update(dt) {
+  // Спавн
+  G.spawnTimer -= dt;
+  if (G.spawnTimer <= 0) {
+    spawnEgg();
+    G.spawnTimer = Math.max(350, EGG_SPAWN_INTERVAL_BASE - G.caught * 7);
+  }
+
+  // Скорость растёт
+  G.speedMult = 1 + G.caught * 0.012;
+  speedEl.textContent = G.speedMult.toFixed(1);
+
+  // Координаты корзины
+  const bx = CENTER + (G.basketSide === 'right' ? BASKET_OFFSET : G.basketSide === 'left' ? -BASKET_OFFSET : 0);
+  const by = CENTER + (G.basketSide === 'down'  ? BASKET_OFFSET : G.basketSide === 'up'   ? -BASKET_OFFSET : 0);
+
+  const speed = EGG_SPEED_BASE * G.speedMult * (dt / 16.67);
+
+  for (let i = G.eggs.length - 1; i >= 0; i--) {
+    const e = G.eggs[i];
+    if (!e.alive) continue;
+
+    e.x += e.vx * speed;
+    e.y += e.vy * speed;
+
+    e.el.style.left = (e.x / FIELD_SIZE * 100) + '%';
+    e.el.style.top  = (e.y / FIELD_SIZE * 100) + '%';
+
+    // Поимка корзиной
+    if (Math.hypot(e.x - bx, e.y - by) < CATCH_RADIUS) {
+      catchEgg(e);
+      continue;
+    }
+
+    // Дошло до волка (центр)
+    if (Math.hypot(e.x - CENTER, e.y - CENTER) < WOLF_RADIUS) {
+      hitWolf(e);
+      continue;
+    }
+
+    // Защита от вылета
+    if (e.x < -50 || e.x > FIELD_SIZE + 50 || e.y < -50 || e.y > FIELD_SIZE + 50) {
+      removeEgg(e);
+    }
+  }
+}
+
+function catchEgg(e) {
+  e.alive = false;
+  G.caught++;
+  caughtEl.textContent = G.caught;
+  G.chickens = Math.floor(G.caught / 5);
+  G.food = Math.floor(G.caught / 10);
+  G.factory = Math.floor(G.caught / 25);
+  chickensEl.textContent = G.chickens;
+  foodEl.textContent = G.food;
+  factoryEl.textContent = G.factory;
+
+  popup(e.x, e.y, '+1 🥚', '#7CFC00');
+  removeEgg(e);
+
+  if (G.caught >= TARGET) win();
+}
+
+function hitWolf(e) {
+  e.alive = false;
+  G.lives--;
+  livesEl.innerHTML = '❤️'.repeat(Math.max(0, G.lives))
+    + '<span class="dead">' + '❤️'.repeat(LIVES - Math.max(0, G.lives)) + '</span>';
+
+  // Волк ругается матом!
+  swear();
+
+  wolfEl.classList.add('hit');
+  setTimeout(() => wolfEl.classList.remove('hit'), 350);
+
+  popup(e.x, e.y, '💥', '#FF4444');
+  removeEgg(e);
+
+  if (G.lives <= 0) lose();
+}
+
+function swear() {
+  const text = SWEARS[Math.floor(Math.random() * SWEARS.length)];
+  const s = document.createElement('div');
+  s.className = 'swear';
+  s.textContent = text;
+  // позиция над волком
+  s.style.left = '50%';
+  s.style.top = '28%';
+  field.appendChild(s);
+  setTimeout(() => s.remove(), 1000);
+}
+
+function removeEgg(e) {
+  e.el.remove();
+  const idx = G.eggs.indexOf(e);
+  if (idx >= 0) G.eggs.splice(idx, 1);
+}
+
+function popup(x, y, text, color) {
+  const p = document.createElement('div');
+  p.className = 'pop';
+  p.textContent = text;
+  p.style.color = color;
+  p.style.left = (x / FIELD_SIZE * 100) + '%';
+  p.style.top  = (y / FIELD_SIZE * 100) + '%';
+  field.appendChild(p);
+  setTimeout(() => p.remove(), 700);
+}
+
+// ============ ЦИКЛ ============
+function loop(now) {
+  if (!G.running) return;
+  const dt = Math.min(50, now - G.lastFrame || 16);
+  G.lastFrame = now;
+  update(dt);
+  requestAnimationFrame(loop);
+}
+
+// ============ СТАРТ / КОНЕЦ ============
+function startGame() {
+  G.running = true;
+  G.caught = 0;
+  G.lives = LIVES;
+  G.speedMult = 1;
+  G.eggs.forEach(e => e.el.remove());
+  G.eggs = [];
+  G.spawnTimer = 500;
+  G.chickens = 0; G.food = 0; G.factory = 0;
+  setBasket('up');
+
+  caughtEl.textContent = '0';
+  livesEl.innerHTML = '❤️'.repeat(LIVES);
+  speedEl.textContent = '1.0';
+  chickensEl.textContent = '0';
+  foodEl.textContent = '0';
+  factoryEl.textContent = '0';
+
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('winScreen').classList.add('hidden');
+  document.getElementById('loseScreen').classList.add('hidden');
+
+  G.lastFrame = performance.now();
+  requestAnimationFrame(loop);
+}
+
+function win() {
+  G.running = false;
+  document.getElementById('winStats').textContent =
+    `Поймано: ${G.caught} · Жизней осталось: ${G.lives}`;
+  document.getElementById('winScreen').classList.remove('hidden');
+}
+
+function lose() {
+  G.running = false;
+  document.getElementById('loseStats').textContent =
+    `Поймано: ${G.caught} из ${TARGET}`;
+  document.getElementById('loseScreen').classList.remove('hidden');
+}
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('restartBtn').addEventListener('click', startGame);
+document.getElementById('retryBtn').addEventListener('click', startGame);
+</script>
+</body>
+</html>
